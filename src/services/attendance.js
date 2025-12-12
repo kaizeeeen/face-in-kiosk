@@ -1,5 +1,6 @@
-import { db } from './firebase';
-import { collection, addDoc, getDocs, query, orderBy, serverTimestamp, where, Timestamp } from 'firebase/firestore';
+import { db, storage } from './firebase';
+import { collection, addDoc, getDocs, query, orderBy, serverTimestamp, where, Timestamp, deleteDoc, doc } from 'firebase/firestore';
+import { ref, getBytes } from 'firebase/storage';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Initialize Gemini
@@ -39,25 +40,27 @@ const blobToGenerativePart = async (blob) => {
  */
 export const verifyIdentity = async (referencePhotoUrl, currentImageBlob) => {
     try {
-        console.log("Fetching reference photo from:", referencePhotoUrl);
+        console.log("Fetching reference photo via CORS Proxy from:", referencePhotoUrl);
         
-        // 1. Fetch the Reference Image from URL and convert to Blob
-        // Explicitly requesting CORS mode.
-        let referenceBlob;
-        try {
-            const response = await fetch(referencePhotoUrl, { mode: 'cors' });
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            referenceBlob = await response.blob();
-        } catch (fetchError) {
-            console.error("Failed to fetch reference photo. This is likely a CORS issue.", fetchError);
-            throw new Error("CORS Error: Cannot download reference photo from Firebase Storage. Please configure CORS on your bucket.");
+        // 1. Fetch the Reference Image using CORS Proxy
+        const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+        
+        const response = await fetch(proxyUrl + referencePhotoUrl);
+        
+        if (!response.ok) {
+            console.error("Proxy Fetch Error Status:", response.status);
+            throw new Error(`Failed to fetch reference photo via proxy: ${response.statusText}`);
         }
+        
+        const referenceBlob = await response.blob();
 
-        // 2. Prepare parts for Gemini (Inline Data / Base64)
+        // 2. Convert Reference Blob to Base64 (Inline Data)
         const referencePart = await blobToGenerativePart(referenceBlob);
+
+        // 3. Convert Current Frame Blob to Base64 (Inline Data)
         const currentPart = await blobToGenerativePart(currentImageBlob);
 
-        // 3. Send to Gemini
+        // 4. Send both Base64 parts to Gemini
         const prompt = `Compare these two images. Strictly confirm if they are the same person. 
         The first image is the reference, the second is the current capture.
         Return JSON: { "match": boolean }`;
@@ -66,7 +69,8 @@ export const verifyIdentity = async (referencePhotoUrl, currentImageBlob) => {
         const responseText = await result.response.text();
         
         console.log("Gemini Verification Response:", responseText);
-        // Clean up markdown code blocks if present (Gemini sometimes adds ```json ... ```)
+        
+        // Parse JSON
         const jsonStr = responseText.replace(/```json\n?|\n?```/g, "").trim();
         const jsonResponse = JSON.parse(jsonStr);
         
@@ -122,6 +126,20 @@ export const getAttendanceHistory = async () => {
         return records;
     } catch (error) {
         console.error("Error fetching attendance history:", error);
+        throw error;
+    }
+};
+
+/**
+ * Deletes an attendance record from Firestore.
+ * @param {string} recordId 
+ */
+export const deleteAttendanceRecord = async (recordId) => {
+    try {
+        await deleteDoc(doc(db, 'attendance', recordId));
+        return true;
+    } catch (error) {
+        console.error("Error deleting attendance record:", error);
         throw error;
     }
 };
