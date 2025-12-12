@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { addWorker, getWorkers, deleteWorker } from '../services/workers';
-import { getAttendanceHistory, deleteAttendanceRecord } from '../services/attendance';
-import { UserPlus, Upload, ArrowLeft, Loader2, FileText, Settings, Download, Trash2, User, ChevronLeft, ChevronRight, Calendar, List } from 'lucide-react';
+import { getAttendanceHistory } from '../services/attendance';
+import { UserPlus, Upload, ArrowLeft, Loader2, FileText, Settings, Download, Trash2, User } from 'lucide-react';
 
 const AdminDashboard = ({ onBack }) => {
     const [activeTab, setActiveTab] = useState('manage'); // 'manage' | 'reports'
@@ -227,88 +227,55 @@ const ManageWorkersTab = () => {
 };
 
 const ReportsTab = () => {
-    const [viewMode, setViewMode] = useState('daily'); // 'daily' | 'history'
-    const [currentDate, setCurrentDate] = useState(new Date());
-
     const [history, setHistory] = useState([]);
     const [workers, setWorkers] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    // Filters for "All History" mode
+    // Filters
     const [selectedWorkerId, setSelectedWorkerId] = useState('ALL');
     const [dateRange, setDateRange] = useState('7'); // '7', '30', 'ALL'
 
     useEffect(() => {
+        const loadData = async () => {
+            setLoading(true);
+            try {
+                const [h, w] = await Promise.all([getAttendanceHistory(), getWorkers()]);
+                setHistory(h);
+                setWorkers(w);
+            } catch (e) {
+                console.error(e);
+            } finally {
+                setLoading(false);
+            }
+        };
         loadData();
     }, []);
 
-    const loadData = async () => {
-        setLoading(true);
-        try {
-            const [h, w] = await Promise.all([getAttendanceHistory(), getWorkers()]);
-            setHistory(h);
-            setWorkers(w);
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleDeleteRecord = async (recordId) => {
-        if (window.confirm("Delete this attendance record? This cannot be undone.")) {
-            try {
-                await deleteAttendanceRecord(recordId);
-                setHistory(prev => prev.filter(item => item.id !== recordId));
-            } catch (error) {
-                alert("Failed to delete record: " + error.message);
-            }
-        }
-    };
-
-    // --- Daily View Logic ---
-    const handlePrevDay = () => {
-        const prev = new Date(currentDate);
-        prev.setDate(prev.getDate() - 1);
-        setCurrentDate(prev);
-    };
-
-    const handleNextDay = () => {
-        const next = new Date(currentDate);
-        next.setDate(next.getDate() + 1);
-        setCurrentDate(next);
-    };
-
-    const dailyData = history.filter(record => {
-        if (!record.timestamp) return false;
-        const recordDate = record.timestamp.toDate ? record.timestamp.toDate() : new Date(record.timestamp);
-        return (
-            recordDate.getDate() === currentDate.getDate() &&
-            recordDate.getMonth() === currentDate.getMonth() &&
-            recordDate.getFullYear() === currentDate.getFullYear()
-        );
-    });
-
-    // --- All History Logic ---
-    const filteredHistoryData = history.filter(record => {
+    // Filter Logic
+    const filteredData = history.filter(record => {
+        // Worker Filter
         if (selectedWorkerId !== 'ALL' && record.workerId !== selectedWorkerId) return false;
+
+        // Date Filter
         if (dateRange !== 'ALL') {
             if (!record.timestamp) return false;
+            
+            // Handle Firestore Timestamp or standard Date object
             const recordDate = record.timestamp.toDate ? record.timestamp.toDate() : new Date(record.timestamp);
             const now = new Date();
             const daysDiff = (now - recordDate) / (1000 * 60 * 60 * 24);
+            
             if (daysDiff > parseInt(dateRange)) return false;
         }
+
         return true;
     });
 
-    // --- Export ---
     const handleExportCSV = () => {
-        const dataToExport = viewMode === 'daily' ? dailyData : filteredHistoryData;
-        if (dataToExport.length === 0) return;
+        if (filteredData.length === 0) return;
 
         const headers = ["Date", "Time", "Worker Name", "Worker ID", "Method", "Verified"];
-        const rows = dataToExport.map(r => {
+        const rows = filteredData.map(r => {
              const d = r.timestamp && r.timestamp.toDate ? r.timestamp.toDate() : new Date();
              return [
                  d.toLocaleDateString(),
@@ -324,7 +291,7 @@ const ReportsTab = () => {
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
         link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `attendance_report_${viewMode}.csv`);
+        link.setAttribute("download", "attendance_report.csv");
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -332,8 +299,51 @@ const ReportsTab = () => {
 
     if (loading) return <div className="text-white flex justify-center p-8"><Loader2 className="animate-spin w-8 h-8"/></div>;
 
-    const renderTable = (data) => (
-         <div className="overflow-x-auto">
+    return (
+        <div className="space-y-6">
+            <div className="flex flex-wrap gap-4 items-end justify-between bg-construction-gray-900 p-4 rounded-lg border border-gray-700">
+                {/* Filters */}
+                <div className="flex gap-4">
+                    <div>
+                        <label className="block text-gray-400 text-sm mb-1">Worker</label>
+                        <select 
+                            value={selectedWorkerId} 
+                            onChange={(e) => setSelectedWorkerId(e.target.value)}
+                            className="bg-construction-gray-800 text-white border border-gray-600 rounded p-2 focus:border-safety-orange outline-none min-w-[200px]"
+                        >
+                            <option value="ALL">All Workers</option>
+                            {workers.map(w => (
+                                <option key={w.id} value={w.id}>{w.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-gray-400 text-sm mb-1">Date Range</label>
+                        <select 
+                            value={dateRange} 
+                            onChange={(e) => setDateRange(e.target.value)}
+                            className="bg-construction-gray-800 text-white border border-gray-600 rounded p-2 focus:border-safety-orange outline-none"
+                        >
+                            <option value="7">Last 7 Days</option>
+                            <option value="30">Last 30 Days</option>
+                            <option value="ALL">All Time</option>
+                        </select>
+                    </div>
+                </div>
+
+                {/* Export */}
+                <button 
+                    onClick={handleExportCSV}
+                    disabled={filteredData.length === 0}
+                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-bold py-2 px-6 rounded-lg transition-colors"
+                >
+                    <Download className="w-5 h-5" />
+                    Export CSV
+                </button>
+            </div>
+
+            {/* Data Table */}
+            <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                     <thead>
                         <tr className="bg-construction-gray-900 text-gray-400 border-b border-gray-700">
@@ -341,14 +351,13 @@ const ReportsTab = () => {
                             <th className="p-4">Worker</th>
                             <th className="p-4">Method</th>
                             <th className="p-4">Status</th>
-                            <th className="p-4 text-right">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="text-gray-300">
-                        {data.length > 0 ? data.map(record => {
+                        {filteredData.length > 0 ? filteredData.map(record => {
                              const date = record.timestamp && record.timestamp.toDate ? record.timestamp.toDate() : new Date();
                              return (
-                                <tr key={record.id} className="border-b border-gray-700 hover:bg-gray-700/50 group">
+                                <tr key={record.id} className="border-b border-gray-700 hover:bg-gray-700/50">
                                     <td className="p-4">
                                         <div className="text-white font-medium">{date.toLocaleDateString()}</div>
                                         <div className="text-sm text-gray-500">{date.toLocaleTimeString()}</div>
@@ -364,115 +373,16 @@ const ReportsTab = () => {
                                             Verified
                                         </span>
                                     </td>
-                                    <td className="p-4 text-right">
-                                        <button 
-                                            onClick={() => handleDeleteRecord(record.id)}
-                                            className="text-gray-600 hover:text-red-500 transition-colors p-2 rounded-full hover:bg-red-500/10"
-                                            title="Delete Record"
-                                        >
-                                            <Trash2 className="w-5 h-5" />
-                                        </button>
-                                    </td>
                                 </tr>
                             );
                         }) : (
                             <tr>
-                                <td colSpan="5" className="p-8 text-center text-gray-500">No records found.</td>
+                                <td colSpan="4" className="p-8 text-center text-gray-500">No records found matching filters.</td>
                             </tr>
                         )}
                     </tbody>
                 </table>
             </div>
-    );
-
-    return (
-        <div className="space-y-6">
-            
-            {/* View Toggle */}
-            <div className="flex justify-center mb-4">
-                <div className="bg-construction-gray-900 p-1 rounded-lg border border-gray-700 flex">
-                    <button 
-                        onClick={() => setViewMode('daily')}
-                        className={`flex items-center gap-2 px-6 py-2 rounded-md font-medium transition-all ${viewMode === 'daily' ? 'bg-construction-gray-800 text-safety-orange shadow-sm' : 'text-gray-400 hover:text-white'}`}
-                    >
-                        <Calendar className="w-4 h-4" />
-                        Daily View
-                    </button>
-                    <button 
-                         onClick={() => setViewMode('history')}
-                         className={`flex items-center gap-2 px-6 py-2 rounded-md font-medium transition-all ${viewMode === 'history' ? 'bg-construction-gray-800 text-safety-orange shadow-sm' : 'text-gray-400 hover:text-white'}`}
-                    >
-                        <List className="w-4 h-4" />
-                        All History
-                    </button>
-                </div>
-            </div>
-
-            {/* View Content */}
-            {viewMode === 'daily' ? (
-                <div className="space-y-6">
-                    {/* Date Navigation */}
-                    <div className="flex flex-col items-center gap-2 bg-construction-gray-900 p-6 rounded-lg border border-gray-700">
-                        <div className="flex items-center gap-6">
-                            <button onClick={handlePrevDay} className="p-2 hover:bg-gray-800 rounded-full text-white transition-colors"><ChevronLeft className="w-6 h-6" /></button>
-                            <h2 className="text-2xl font-bold text-white min-w-[200px] text-center">
-                                {currentDate.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
-                            </h2>
-                            <button onClick={handleNextDay} className="p-2 hover:bg-gray-800 rounded-full text-white transition-colors"><ChevronRight className="w-6 h-6" /></button>
-                        </div>
-                        <p className="text-safety-orange font-bold text-lg">
-                            {dailyData.length} Worker{dailyData.length !== 1 ? 's' : ''} Present
-                        </p>
-                    </div>
-                    
-                    {renderTable(dailyData)}
-                </div>
-            ) : (
-                <div className="space-y-6">
-                     <div className="flex flex-wrap gap-4 items-end justify-between bg-construction-gray-900 p-4 rounded-lg border border-gray-700">
-                        {/* Filters */}
-                        <div className="flex gap-4">
-                            <div>
-                                <label className="block text-gray-400 text-sm mb-1">Worker</label>
-                                <select 
-                                    value={selectedWorkerId} 
-                                    onChange={(e) => setSelectedWorkerId(e.target.value)}
-                                    className="bg-construction-gray-800 text-white border border-gray-600 rounded p-2 focus:border-safety-orange outline-none min-w-[200px]"
-                                >
-                                    <option value="ALL">All Workers</option>
-                                    {workers.map(w => (
-                                        <option key={w.id} value={w.id}>{w.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-gray-400 text-sm mb-1">Date Range</label>
-                                <select 
-                                    value={dateRange} 
-                                    onChange={(e) => setDateRange(e.target.value)}
-                                    className="bg-construction-gray-800 text-white border border-gray-600 rounded p-2 focus:border-safety-orange outline-none"
-                                >
-                                    <option value="7">Last 7 Days</option>
-                                    <option value="30">Last 30 Days</option>
-                                    <option value="ALL">All Time</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        {/* Export */}
-                        <button 
-                            onClick={handleExportCSV}
-                            disabled={filteredHistoryData.length === 0}
-                            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-bold py-2 px-6 rounded-lg transition-colors"
-                        >
-                            <Download className="w-5 h-5" />
-                            Export CSV
-                        </button>
-                    </div>
-
-                    {renderTable(filteredHistoryData)}
-                </div>
-            )}
         </div>
     );
 };
