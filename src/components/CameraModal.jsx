@@ -1,6 +1,6 @@
 import React, { useRef, useState, useCallback } from 'react';
 import Webcam from 'react-webcam';
-import { Camera, CheckCircle, X, Loader2, UserX, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { Camera, CheckCircle, X, Loader2, UserX, AlertTriangle, ShieldAlert, SwitchCamera } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { verifyIdentity, recordAttendance } from '../services/attendance';
 
@@ -10,6 +10,7 @@ const CameraModal = ({ employee, onClose, onVerified }) => {
   const [status, setStatus] = useState('idle'); // idle, processing, success, error, confirm_override
   const [errorMessage, setErrorMessage] = useState(null);
   const [failCount, setFailCount] = useState(0);
+  const [facingMode, setFacingMode] = useState('user'); // 'user' or 'environment'
 
   const capture = useCallback(async () => {
     setErrorMessage(null);
@@ -93,6 +94,10 @@ const CameraModal = ({ employee, onClose, onVerified }) => {
       setStatus('idle');
   };
 
+  const toggleCamera = () => {
+      setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm">
       <div className="relative w-full max-w-4xl bg-construction-gray-900 rounded-2xl overflow-hidden shadow-2xl border border-gray-700 mx-4">
@@ -113,15 +118,26 @@ const CameraModal = ({ employee, onClose, onVerified }) => {
         {/* Camera Area */}
         <div className="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
           {!imgSrc && status !== 'confirm_override' ? (
-            <Webcam
-              audio={false}
-              ref={webcamRef}
-              screenshotFormat="image/jpeg"
-              className="w-full h-full object-cover"
-              videoConstraints={{
-                facingMode: "user"
-              }}
-            />
+            <>
+                <Webcam
+                    audio={false}
+                    ref={webcamRef}
+                    screenshotFormat="image/jpeg"
+                    className="w-full h-full object-cover"
+                    videoConstraints={{
+                        facingMode: facingMode
+                    }}
+                />
+                
+                {/* Camera Toggle Button */}
+                <button 
+                    onClick={toggleCamera}
+                    className="absolute top-4 right-4 z-10 p-3 bg-black/50 hover:bg-black/70 rounded-full text-white backdrop-blur-sm transition-all"
+                    title="Switch Camera"
+                >
+                    <SwitchCamera className="w-6 h-6" />
+                </button>
+            </>
           ) : status === 'confirm_override' ? (
              <div className="bg-construction-gray-900 w-full h-full flex flex-col items-center justify-center p-8 text-center">
                  <ShieldAlert className="w-24 h-24 text-yellow-500 mb-4" />
