@@ -40,29 +40,24 @@ const blobToGenerativePart = async (blob) => {
  */
 export const verifyIdentity = async (referencePhotoUrl, currentImageBlob) => {
     try {
-        console.log("Fetching reference photo via CORS Proxy from:", referencePhotoUrl);
+        console.log("Fetching reference photo via Weserv Image Proxy:", referencePhotoUrl);
         
-        // 1. Fetch the Reference Image using CORS Proxy
-        const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+        // Use images.weserv.nl as a stable CORS proxy for images
+        // We strip the "https://" from the source URL because weserv accepts the domain directly or full URL encoded
+        // Standard pattern: https://images.weserv.nl/?url=ssl:firebasestorage.googleapis.com/...
+        // But simply encoding the full URL usually works.
         
-        // Add cache busting timestamp to URL
-        const separator = referencePhotoUrl.includes('?') ? '&' : '?';
-        const urlWithCacheBust = `${referencePhotoUrl}${separator}t=${Date.now()}`;
+        const encodedUrl = encodeURIComponent(referencePhotoUrl.replace('https://', ''));
+        // maxage=1h sets the Cache-Control max-age to 60 minutes (User request)
+        // we append a random param to ensure the *request* to weserv is fresh if needed, but 'no-store' fetch handles that.
+        const proxyUrl = `https://images.weserv.nl/?url=${encodedUrl}&maxage=1h&output=jpg`;
         
-        // Fetch with No-Cache headers
-        const response = await fetch(proxyUrl + urlWithCacheBust, {
-            headers: {
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache'
-            }
+        const response = await fetch(proxyUrl, {
+            cache: 'no-store', // Ensure browser doesn't serve a cached version
         });
         
         if (!response.ok) {
             console.error("Proxy Fetch Error Status:", response.status);
-            // If 403, it's often the demo server limit or missing 'X-Requested-With' which cors-anywhere sometimes wants
-            if (response.status === 403) {
-                console.error("Access Forbidden. You may need to visit https://cors-anywhere.herokuapp.com/corsdemo to request temporary access.");
-            }
             throw new Error(`Failed to fetch reference photo via proxy: ${response.status} ${response.statusText}`);
         }
         
