@@ -20,8 +20,6 @@ function App() {
 
   const handleVerified = () => {
     setSelectedEmployee(null);
-    // Reload grid? Or just reset.
-    // If we wanted to refresh the grid, we might need a signal, but standard usage doesn't require it immediately.
   };
 
   // Admin Flow

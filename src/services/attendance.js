@@ -40,20 +40,30 @@ const blobToGenerativePart = async (blob) => {
  */
 export const verifyIdentity = async (referencePhotoUrl, currentImageBlob) => {
     try {
-        console.log("Fetching reference photo via Weserv Image Proxy:", referencePhotoUrl);
+        console.log("Fetching reference photo via Weserv Proxy:", referencePhotoUrl);
         
-        // Use images.weserv.nl as a stable CORS proxy for images
-        // We strip the "https://" from the source URL because weserv accepts the domain directly or full URL encoded
-        // Standard pattern: https://images.weserv.nl/?url=ssl:firebasestorage.googleapis.com/...
-        // But simply encoding the full URL usually works.
+        // 1. Prepare unique URL for cache busting
+        // Appending a timestamp to the source URL forces Weserv to treat it as a new resource
+        const separator = referencePhotoUrl.includes('?') ? '&' : '?';
+        const uniqueSourceUrl = `${referencePhotoUrl}${separator}t=${Date.now()}`;
         
-        const encodedUrl = encodeURIComponent(referencePhotoUrl.replace('https://', ''));
-        // maxage=1h sets the Cache-Control max-age to 60 minutes (User request)
-        // we append a random param to ensure the *request* to weserv is fresh if needed, but 'no-store' fetch handles that.
+        // 2. Encode for Weserv
+        // Remove https:// protocol for shorter URLs if preferred, or just encode the whole thing.
+        // Weserv accepts encoded full URLs.
+        const encodedUrl = encodeURIComponent(uniqueSourceUrl);
+        
+        // 3. Construct Proxy URL
+        // maxage=1h: Sets Cache-Control to 1 hour (User Requirement)
+        // output=jpg: Ensures consistent format
         const proxyUrl = `https://images.weserv.nl/?url=${encodedUrl}&maxage=1h&output=jpg`;
         
+        // 4. Fetch with No-Cache
         const response = await fetch(proxyUrl, {
-            cache: 'no-store', // Ensure browser doesn't serve a cached version
+            cache: 'no-store', // Prevent browser caching
+            headers: {
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+            }
         });
         
         if (!response.ok) {
@@ -63,13 +73,13 @@ export const verifyIdentity = async (referencePhotoUrl, currentImageBlob) => {
         
         const referenceBlob = await response.blob();
 
-        // 2. Convert Reference Blob to Base64 (Inline Data)
+        // 5. Convert Reference Blob to Base64 (Inline Data)
         const referencePart = await blobToGenerativePart(referenceBlob);
 
-        // 3. Convert Current Frame Blob to Base64 (Inline Data)
+        // 6. Convert Current Frame Blob to Base64 (Inline Data)
         const currentPart = await blobToGenerativePart(currentImageBlob);
 
-        // 4. Send both Base64 parts to Gemini
+        // 7. Send both Base64 parts to Gemini
         const prompt = `Compare these two images. Strictly confirm if they are the same person. 
         The first image is the reference, the second is the current capture.
         Return JSON: { "match": boolean }`;
