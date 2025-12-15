@@ -45,11 +45,25 @@ export const verifyIdentity = async (referencePhotoUrl, currentImageBlob) => {
         // 1. Fetch the Reference Image using CORS Proxy
         const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
         
-        const response = await fetch(proxyUrl + referencePhotoUrl);
+        // Add cache busting timestamp to URL
+        const separator = referencePhotoUrl.includes('?') ? '&' : '?';
+        const urlWithCacheBust = `${referencePhotoUrl}${separator}t=${Date.now()}`;
+        
+        // Fetch with No-Cache headers
+        const response = await fetch(proxyUrl + urlWithCacheBust, {
+            headers: {
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+            }
+        });
         
         if (!response.ok) {
             console.error("Proxy Fetch Error Status:", response.status);
-            throw new Error(`Failed to fetch reference photo via proxy: ${response.statusText}`);
+            // If 403, it's often the demo server limit or missing 'X-Requested-With' which cors-anywhere sometimes wants
+            if (response.status === 403) {
+                console.error("Access Forbidden. You may need to visit https://cors-anywhere.herokuapp.com/corsdemo to request temporary access.");
+            }
+            throw new Error(`Failed to fetch reference photo via proxy: ${response.status} ${response.statusText}`);
         }
         
         const referenceBlob = await response.blob();
